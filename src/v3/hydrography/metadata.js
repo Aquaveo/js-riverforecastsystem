@@ -16,9 +16,9 @@ const DEFAULT_CONCURRENCY = 8;
  * onProgress({done, total}) fires per chunk. `signal` aborts between chunks — mid-flight requests
  * are left to settle and discarded, which costs at most one chunk of wasted bandwidth.
  */
-const fetchMetadataArray = async ({variable, group, onProgress, signal, concurrency = DEFAULT_CONCURRENCY} = {}) => {
+const fetchMetadataArray = async ({variable, onProgress, signal, concurrency = DEFAULT_CONCURRENCY} = {}) => {
   if (!variable) throw new Error("fetchMetadataArray requires a variable");
-  const node = await openZarrArray({zarrUrl: hydrographyMetadataZarr({group}), variable});
+  const node = await openZarrArray({zarrUrl: hydrographyMetadataZarr(), variable});
   const total = node.shape[0];
   const step = node.chunks[0];
   if (!total || !step) throw new Error(`${variable}: expected a chunked 1-D array, got shape ${node.shape}`);
@@ -69,10 +69,10 @@ const fetchMetadataArray = async ({variable, group, onProgress, signal, concurre
  *
  * `index` is a position on the store's axis: a riverIndex, the same one the discharge readers take.
  */
-const fetchMetadataAt = async ({variables, index, group} = {}) => {
+const fetchMetadataAt = async ({variables, index} = {}) => {
   if (!variables?.length) throw new Error("fetchMetadataAt requires at least one variable");
   if (!Number.isInteger(index) || index < 0) throw new Error(`fetchMetadataAt requires a non-negative integer index, got ${index}`);
-  const zarrUrl = hydrographyMetadataZarr({group});
+  const zarrUrl = hydrographyMetadataZarr();
   const entries = await Promise.all(variables.map(async (variable) => {
     const node = await openZarrArray({zarrUrl, variable});
     const total = node.shape[0];

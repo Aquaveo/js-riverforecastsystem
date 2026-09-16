@@ -276,7 +276,7 @@ class FloodMapsIndex {
     if (!metaBuf) throw new Error(`zarr.json missing for ${name}`);
     const attrs = JSON.parse(new TextDecoder().decode(metaBuf)).attributes;
     // The river directory is keyed by GEOGLOWS v3 riverIndex — the reach's row position in
-    // hydrography/group=0/metadata.parquet, the same number every discharge reader takes. Fail
+    // hydrography/global/metadata.parquet, the same number every discharge reader takes. Fail
     // loudly if it is missing: a silently missing list means empty coverage, which looks like
     // "this viewport has no flood data" rather than a broken store.
     const riverIndices = attrs.rivers?.riverIndex;
