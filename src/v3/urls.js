@@ -1,23 +1,38 @@
 import {v3Base} from "./config.js";
 
 // ── hydrography ──────────────────────────────────────────────────────────────
-const globalGroupNumber = "0";
-const _streamsPmtilesFile = "streams.pmtiles";
-const _metadataStore = "metadata.zarr";
-const hydrographyGroup = ({group} = {}) => `${v3Base()}/hydrography/group=${group}`;
-const streamsPmtiles = () => `${hydrographyGroup({group: globalGroupNumber})}/${_streamsPmtilesFile}`;
-const hydrographyMetadataZarr = ({group = globalGroupNumber} = {}) => `${hydrographyGroup({group})}/${_metadataStore}`;
-// The geometry is published one GeoParquet per group; the group-0 pmtiles and tables are global.
-const catchmentsPmtiles = () => `${hydrographyGroup({group: globalGroupNumber})}/catchments.pmtiles`;
-const groupsPmtiles = () => `${hydrographyGroup({group: globalGroupNumber})}/groups.pmtiles`;
-const hydrographyMetadataParquet = () => `${hydrographyGroup({group: globalGroupNumber})}/metadata.parquet`;
-const riverNamesJson = () => `${hydrographyGroup({group: globalGroupNumber})}/riverNames.json`;
-const _requireGroup = (group, fn) => {
-  if (group === undefined || group === null) throw new Error(`${fn} requires a group number`);
-  return group;
+// global/ holds the whole-network products. Everything else is published whole per HydroBASINS
+// level-2 region (the TDXHydroRegion number) in region=<region>/, each one an unbroken run of riverIndex.
+const hydrographyBase = () => `${v3Base()}/hydrography`;
+const hydrographyGlobal = () => `${hydrographyBase()}/global`;
+const _requireRegion = (region, fn) => {
+  if (region === undefined || region === null || region === "") throw new Error(`${fn} requires a region number`);
+  return region;
 };
-const streamsGeoparquet = ({group} = {}) => `${hydrographyGroup({group: _requireGroup(group, "streamsGeoparquet")})}/streams_${group}.geo.parquet`;
-const catchmentsGeoparquet = ({group} = {}) => `${hydrographyGroup({group: _requireGroup(group, "catchmentsGeoparquet")})}/catchments_${group}.geo.parquet`;
+const hydrographyRegion = ({region} = {}) => `${hydrographyBase()}/region=${_requireRegion(region, "hydrographyRegion")}`;
+const _regionFile = (kind, suffix) => ({region} = {}) => {
+  _requireRegion(region, `the ${kind} file`);
+  return `${hydrographyRegion({region})}/${kind}_${region}${suffix}`;
+};
+// global products
+const streamsPmtiles = () => `${hydrographyGlobal()}/streams.pmtiles`;
+const catchmentsPmtiles = () => `${hydrographyGlobal()}/catchments.pmtiles`;
+const regionsPmtiles = () => `${hydrographyGlobal()}/regions.pmtiles`;
+const regionsGeoparquet = () => `${hydrographyGlobal()}/regions.geo.parquet`;
+const hydrographyMetadataZarr = () => `${hydrographyGlobal()}/metadata.zarr`;
+const riverNamesJson = () => `${hydrographyGlobal()}/riverNames.json`;
+// the global table without a region, that region's slice of it with one
+const hydrographyMetadataParquet = ({region} = {}) => (region == null
+  ? `${hydrographyGlobal()}/metadata.parquet`
+  : _regionFile("metadata", ".parquet")({region}));
+const watershedsParquet = ({region} = {}) => (region == null
+  ? `${hydrographyGlobal()}/watersheds.parquet`
+  : _regionFile("watersheds", ".parquet")({region}));
+// per-region geometry
+const streamsGeoparquet = _regionFile("streams", ".geo.parquet");
+const catchmentsGeoparquet = _regionFile("catchments", ".geo.parquet");
+const confluencesGeoparquet = _regionFile("confluences", ".geo.parquet");
+const boundaryGeoparquet = _regionFile("boundary", ".geo.parquet");
 
 // ── retrospective ────────────────────────────────────────────────────────────
 const allowedResolutions = ["hourly", "daily", "monthly", "yearly"];
@@ -68,9 +83,10 @@ const streamsStyles = ({date, styleset}) => {
 
 export {
   // hydrography url builders
-  hydrographyGroup, streamsPmtiles, hydrographyMetadataZarr,
-  catchmentsPmtiles, groupsPmtiles, hydrographyMetadataParquet, riverNamesJson,
-  streamsGeoparquet, catchmentsGeoparquet,
+  hydrographyBase, hydrographyGlobal, hydrographyRegion,
+  streamsPmtiles, catchmentsPmtiles, regionsPmtiles, regionsGeoparquet,
+  hydrographyMetadataZarr, hydrographyMetadataParquet, watershedsParquet, riverNamesJson,
+  streamsGeoparquet, catchmentsGeoparquet, confluencesGeoparquet, boundaryGeoparquet,
   // retrospective url builders
   retrospectiveZarr, returnPeriodsZarr, maximumsZarr,
   // forecast url builders
