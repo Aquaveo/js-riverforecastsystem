@@ -20,6 +20,15 @@ const dateToInit = yyyymmdd => new Date(Date.UTC(
   Number(yyyymmdd.slice(0, 4)), Number(yyyymmdd.slice(4, 6)) - 1, Number(yyyymmdd.slice(6, 8))
 ));
 
+// Run an async mapper over items with at most `limit` concurrent, preserving order.
+const mapLimit = async (items, limit, fn) => {
+  const results = new Array(items.length);
+  let next = 0;
+  const worker = async () => { while (next < items.length) { const i = next++; results[i] = await fn(items[i]); } };
+  await Promise.all(Array.from({length: Math.min(limit, items.length)}, worker));
+  return results;
+};
+
 export default async function ({baseUrl, riverId, idx, startDate, endDate} = {}) {
   /*
   Assembles a continuous forecast record for a river by concatenating the near-term portion of each
@@ -43,19 +52,29 @@ export default async function ({baseUrl, riverId, idx, startDate, endDate} = {})
     throw new Error(`No forecasts available between ${startDate} and ${endDate}.`);
   }
 
-  const record = {time: [], flow_median: [], flow_uncertainty_upper: [], flow_uncertainty_lower: []};
-  for (let i = 0; i < dates.length; i++) {
-    const date = dates[i];
-    // truncate each day's segment at the next available forecast's init so segments never overlap;
-    // gaps in the archive naturally extend the preceding segment. the final day keeps its full horizon.
-    const cutoff = i + 1 < dates.length ? dateToInit(dates[i + 1]) : null;
+  // The river's index in the rivid coordinate is the same across daily forecasts,
+  // so resolve it once (not per date — that re-read the full rivid array every time).
+  let resolvedIdx = idx;
+  if (resolvedIdx === undefined) {
+    resolvedIdx = await resolveRiverIdToIndex({zarrUrl: `${bucketUrl}/${dates[0]}00.zarr`, riverId, idx, idVariable: "rivid"});
+  }
 
+  // Fetch each day's time axis + Qout in parallel (bounded, to avoid overwhelming S3).
+  const fetched = await mapLimit(dates, 6, async date => {
     const zarrUrl = `${bucketUrl}/${date}00.zarr`;
-    const resolvedIdx = await resolveRiverIdToIndex({zarrUrl, riverId, idx, idVariable: "rivid"});
     const [time, flat] = await Promise.all([
       getTimeCoordinateValues({zarrUrl}),
       fetchZarrValues({zarrUrl, variable: "Qout", selection: [{start: 0, stop: nEnsMembers, step: 1}, null, resolvedIdx]}),
     ]);
+    return {time, flat};
+  });
+
+  // Assemble in date order: keep each day's timesteps before the next forecast's init.
+  const record = {time: [], flow_median: [], flow_uncertainty_upper: [], flow_uncertainty_lower: []};
+  for (let i = 0; i < dates.length; i++) {
+    // gaps in the archive naturally extend the preceding segment; the final day keeps its full horizon.
+    const cutoff = i + 1 < dates.length ? dateToInit(dates[i + 1]) : null;
+    const {time, flat} = fetched[i];
     const nT = time.length; // flat is [member, time] row-major
 
     for (let t = 0; t < nT; t++) {
